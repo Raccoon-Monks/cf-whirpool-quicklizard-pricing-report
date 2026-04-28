@@ -1,2 +1,2 @@
-# cf-whirpool-quicklizard-pricing-report
+# CF  Whirpool Quicklizard Pricing Report
 Transferindo dados diarios para BQ
