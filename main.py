@@ -64,7 +64,7 @@ def hello_gcs(request):
             # Integração BigQuery
             # Procedure 
             query = f"CALL `whirlpool-gcp.executive_report.quicklizard_pricing_report_load`('{parquet_name}')"
-            print("Executando Procedure no BigQuery... {query}")
+            print(f"Executando Procedure no BigQuery... {query}")
             bq_client.query(query).result()
 
             # 5. Limpeza cirúrgica (Deleta apenas o que processou)
