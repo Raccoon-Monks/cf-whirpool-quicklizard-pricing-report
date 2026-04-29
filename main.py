@@ -31,6 +31,7 @@ def hello_gcs(request):
         files_processed = 0
         
         for blob in blobs:
+            print(blob)
             if not blob.name.endswith('.csv') or blob.name == PREFIX:
                 continue
             
