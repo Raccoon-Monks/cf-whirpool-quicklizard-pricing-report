@@ -5,7 +5,6 @@ import polars as pl
 from google.cloud import storage
 from google.cloud import bigquery
 
-
 ### Dados sobre bucket de leitura e onde e qual tabela ira salvar
 BUCKET_NAME = "whirlpool-retailers-tracking-staging"
 
