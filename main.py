@@ -17,7 +17,7 @@ DEST_PREFIX =  "quick-lizard-pricing-report-upload-daily/trat/"
 
 
 @functions_framework.http
-def hello_http(request):
+def hello_gcs(request):
     # Funções do GCP que serão utilizadas
     storage_client = storage.Client();
     
