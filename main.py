@@ -15,117 +15,69 @@ PREFIX = "quick-lizard-pricing-report-upload-daily/daily/"
 DEST_PREFIX =  "quick-lizard-pricing-report-upload-daily/trat/"
 
 
-
 @functions_framework.http
 def hello_gcs(request):
-    # Funções do GCP que serão utilizadas
-    storage_client = storage.Client();
-    
-    bq_cliente = bigquery.Client();
+    storage_client = storage.Client()
+    bq_client = bigquery.Client()
     bucket = storage_client.bucket(BUCKET_NAME)
     
+    # Captura o arquivo específico do evento
+    request_json = request.get_json(silent=True)
+    if not request_json or 'name' not in request_json:
+        return {"status": "ignored", "message": "No filename"}, 200
+
+    file_path = request_json['name']
+    
+    # Ignora se não for CSV ou se não estiver na pasta 'daily'
+    if not file_path.endswith('.csv') or not file_path.startswith(PREFIX):
+        return {"status": "Ignorado", "message": "Não é um CSV"}, 200
+
     try:
-        # Lista os arquivos para tratamento no Bucket
-        blobs = list(bucket.list_blobs(prefix=PREFIX)) 
+        blob = bucket.blob(file_path)
+        if not blob.exists():
+            return {"status": "Erro", "message": "Blob desaparecido"}, 404
 
-        files_processed = 0
+        # Nome do arquivo de destino
+        file_name = file_path.split('/')[-1]
+        parquet_name = file_name.replace('.csv', '.parquet')
+        dest_path = f"{DEST_PREFIX}{parquet_name}"
+        dest_blob = bucket.blob(dest_path)
+
+        # Processamento Individual
+        print(f"Processando arquivo único: {file_path}")
+        gcs_uri = f"gs://{BUCKET_NAME}/{file_path}"
         
-        for blob in blobs:
-            print(blob)
-            if not blob.name.endswith('.csv') or blob.name == PREFIX:
-                continue
-            
-            # Definir no tipo de arquivo que será salvo: parquet pq é custa menos armazenamento
-            file_name_parquet = blob.name.split('/')[-1].replace('.csv', '.parquet')
-            dest_blob_name = f"{DEST_PREFIX}{file_name_parquet}"
-            
-            
-            dest_blob = bucket.blob(dest_blob_name)
-
-            
-            # Verifica se o arquivo já existe no Bucket
-            if not dest_blob.exists():
-                gcs_path = f"gs://{BUCKET_NAME}/{blob.name}"
-                print(f"Processando: {blob.name}")
-                
-                
-                # Função de tratamento
-                df = automate_transfer_data_total_json(gcs_path)
-                
-                if df is not None:
-                    temp_local_path = f"/tmp/{file_name_parquet}"
-
-                    df.write_parquet(temp_local_path, compression="snappy", use_pyarrow=False)
-                    
-                    # Upload
-                    dest_blob.upload_from_filename(temp_local_path)
-                    
-                    # Limpeza imediata do arquivo temporário para liberar espaço
-                    if os.path.exists(temp_local_path):
-                        os.remove(temp_local_path)
-
-                    
-                    # Força a liberação da memória do DataFrame
-                    del df
-                    
-                    print(f"Salvo com sucesso: {dest_blob_name}")
-                files_processed += 1
-
-                
-            else:
-                print(f"Já existe no GCS, pulando: {dest_blob_name}")
-
-        if files_processed <= 0:
-            raise ValueError(f"Quantidade de arquivos inválida: {files_processed}. Deve ser maior que 0.")
-            
-        print(f"Sucesso! Total de {files_processed} arquivos processados.")
-
-        # Ao final de tudo é chamando a função que insere os dados no BQ e Remove dados tratados
-
-        print("Chamando a função `whirlpool-gcp.executive_report.quicklizard_pricing_report_load`()")
-    
-        query = 'CALL `whirlpool-gcp.executive_report.quicklizard_pricing_report_load`()'
-    
-        query_job = bq_cliente.query(query)
-    
-        query_job.result()
-    
-        print('Dados salvos no Bq')
-                
-
-        # Removendo arquivos tratados
-        print('Removendo dados brutos e limpos')
-        # Blod daily
-        blobs_daily = list(bucket.list_blobs(prefix=PREFIX)) 
-        blobs_trat  = list(bucket.list_blobs(prefix=DEST_PREFIX)) 
+        # Chama sua função de tratamento (supondo que ela aceite o path gs://)
+        df = automate_transfer_data_total_json(gcs_uri)
         
-        enum_re = 0
+        if df is not None:
+            local_tmp = f"/tmp/{parquet_name}"
+            df.write_parquet(local_tmp, compression="snappy")
+            
+            # Upload do tratado
+            dest_blob.upload_from_filename(local_tmp)
+            if os.path.exists(local_tmp):
+                os.remove(local_tmp)
+            
+            print(f"Upload concluído: {dest_path}")
 
-        # Depois do processo de tratamento e salvamento dos dados é removido do bucket tando dados tratado quando bruto
-        files_to_delete_csv = [
-            blob.name for blob in blobs_daily 
-            if blob.name.endswith('.csv')
-        ]
-        
-        files_to_delete_parquet = [
-            blob.name for blob in blobs_trat 
-            if blob.name.endswith('.parquet')
-        ]
-        
-        if files_to_delete_csv:
-            bucket.delete_blobs(files_to_delete_csv)
-            print(f"Removidos {len(files_to_delete_csv)} arquivos brutos.")
+            # Integração BigQuery
+            # Procedure 
+            print("Executando Procedure no BigQuery...")
+            query = f'CALL `whirlpool-gcp.executive_report.quicklizard_pricing_report_load`({parquet_name})'
+            bq_client.query(query).result()
 
-        if files_to_delete_parquet:
-            bucket.delete_blobs(files_to_delete_parquet)
-            print(f"Removidos {len(files_to_delete_parquet)} arquivos tratados.")
-        
-        print("Limpeza concluida e dados adicionados no BQ")
-        # Ao final retorna 
-        return {"status": "success"} , 200        
+            # 5. Limpeza cirúrgica (Deleta apenas o que processou)
+            blob.delete()
+            dest_blob.delete()
+            print(f"Limpeza concluída para: {file_name}")
+            
+            return {"status": "success", "processed": file_name}, 200
+
     except Exception as e:
-        print('Error', e)
-        return {"status": "error", "message": str(e)}, 500
+        print(f"Erro ao processar {file_path}: {str(e)}")
+        # Retornamos 200 em erros de 'File Not Found' para evitar Retries infinitos do GCP
+        return {"status": "error", "message": str(e)}, 200
 
 
 
