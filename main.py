@@ -131,7 +131,7 @@ def automate_transfer_data_total_json(path):
         'Shelf Price EPP', 'Shelf Price Premier', 'Shelf Price Select',
         'Target Price EPP', 'Target Price Premier', 'Target Price Select',
         'Recommended Price EPP', 'Recommended Price Premier', 'Recommended Price Select'
-    ]
+    ]   
     data = data.with_columns(
       pl.col(num_cols).cast(pl.Float32)
     )
