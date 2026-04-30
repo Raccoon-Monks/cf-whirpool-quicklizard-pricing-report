@@ -136,5 +136,16 @@ END;
 Se isso não ocorrer, é porque houve algum erro na CF.
 
 
+## Ferramentas utilizadas
+
+* functions-framework==3.*
+* google-cloud-storage
+* google-cloud-bigquery
+* polars
+* gcsfs
+* fsspec
+
+
+
 
 
